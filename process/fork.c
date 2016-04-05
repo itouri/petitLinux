@@ -25,29 +25,37 @@ int sys_fork(struct pt_regs regs)
 
 //kernel/fork.c
 //[p124]
-long do_fork(unsigned long clone_flags,
+//copy_process()とwake_up_forked_process()が分かっていればdo_forkはOK
+long do_fork(unsigned long clone_flags, //なんかいろいろ属性があるっぽい
               unsigned long stack_start,//子プロセスのユーザモードスタックポインタを指定
               struct pt_regs *regs,
               unsigned long stack_size, //常に0だってさ
-              int __user *parent_tidptr,
-              int __user *child_tidptr)
+              int __user *parent_tidptr, //親プロセスのユーザモード空間内の変数アドレス
+              int __user *child_tidptr) //ユーザモード空間内の変数アドレス
 {
         struct task_struct *p;
         int trace = 0;
         long pid;
 
+        //親プロセスをデバッガが監視対象にしているのかチェック
         if (unlikely(current->ptrace)) {
                 trace = fork_traceflag (clone_flags);
                 if (trace)
                         clone_flags |= CLONE_PTRACE;
         }
 
+        //こんなん全部見てたらハゲるわ
         p = copy_process(clone_flags, stack_start, regs, stack_size, parent_tidptr, child_tidptr);
         /*
          * Do this prior waking up the new thread - the thread pointer
          * might get invalid after that point, if the thread exits quickly.
          */
         pid = IS_ERR(p) ? PTR_ERR(p) : p->pid;
+        //static inline long IS_ERR(const void *ptr)
+        // {
+        //    return (unsigned long)ptr > (unsigned long)-1000L;
+        // }
+
 
         if (!IS_ERR(p)) {
                 struct completion vfork;
@@ -67,9 +75,11 @@ long do_fork(unsigned long clone_flags,
 
                 p->state = TASK_STOPPED;
                 if (!(clone_flags & CLONE_STOPPED))
+                        //一体何をしているの?
                         wake_up_forked_process(p);      /* do this last */
                 ++total_forks;
 
+                //ここより下も監視の話
                 if (unlikely (trace)) {
                         current->ptrace_message = pid;
                         ptrace_notify ((trace << 8) | SIGTRAP);
